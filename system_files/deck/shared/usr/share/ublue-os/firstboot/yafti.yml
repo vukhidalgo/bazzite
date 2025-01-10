@@ -31,8 +31,7 @@ screens:
           description: A self-hosted game stream host for Moonlight
           default: false
           packages:
-          - Install Sunshine: ujust setup-sunshine install
-          - Autostart Sunshine: ujust setup-sunshine autostart
+          - Enable Sunshine: ujust setup-sunshine enable
         Resilio Sync:
           description: A file synchronization utility powered by BitTorrent
           default: false
@@ -48,7 +47,7 @@ screens:
     values:
       title: Application Installation
       show_terminal: true
-      package_manager: yafti.plugin.flatpak
+      package_manager: yafti.plugin.run
       groups:
         Add input group to current user:
           description: Adds the input group to your current user. Required by certain controller drivers.
@@ -60,11 +59,11 @@ screens:
           default: true
           packages:
           - Enable Updates: sudo -A ujust enable-deck-bios-firmware-updates
-        Visible Password Aestriks:
+        Visible Password Asterisks:
           description: Toggles pwfeedback on.
           default: true
           packages:
-          - Toggle password feedback: sudo -A ujust toggle-password-feedback enable
+          - Toggle password feedback: sudo -A ujust toggle-password-feedback on
         Hide GRUB Menu:
           description: Hide the GRUB menu on boot
           default: false
@@ -102,7 +101,7 @@ screens:
       icon: "/usr/share/ublue-os/bazzite/logo.svg"
       links:
       - "Install More Applications":
-          run: /usr/bin/plasma-discover
+          run: /usr/bin/plasma-discover || /usr/bin/gnome-software
       - "Documentation":
           run: /usr/bin/xdg-open https://docs.bazzite.gg
       - "Forums":

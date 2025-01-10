@@ -1,5 +1,10 @@
 # vim: set ft=make :
 
+# Enable BTRFS deduplication
+enable-deduplication:
+    systemctl enable btrfs-dedup@var-home.timer
+    systemctl enable btrfs-dedup@run-media-mmcblk0p1.timer
+
 # Install Handheld Controller Glyphs theme for hhd & CSS Loader (https://github.com/victor-borges/handheld-controller-glyphs)
 install-hhd-controller-glyph-theme:
     #!/usr/bin/bash
@@ -139,6 +144,50 @@ install-speaker-firmware ACTION="":
     fi
     rm /tmp/bazzite-speaker.sh
 
+# Configure video overrides for Steam
+configure-override-videos ACTION="":
+    #!/usr/bin/bash
+    source /usr/lib/ujust/ujust.sh
+    OPTION={{ ACTION }}
+    if [ ! -f $HOME/.local/share/Steam/config/uioverrides/movies/bazzite_novideo ]; then
+        VIDEO_STATE="${b}Enabled${n}"
+    else
+        VIDEO_STATE="${b}Disabled${n}"
+    fi
+    if [ "$OPTION" == "help" ]; then
+      echo "Usage: ujust configure-override-videos <option>"
+      echo "  <option>: Specify the quick option to skip the prompt"
+      echo "  Use 'enable' to enable override videos."
+      echo "  Use 'disable' to disable and remove override videos."
+      exit 0
+    elif [ "$OPTION" == "" ]; then
+      echo "${bold}Override video configuration${normal}"
+      echo "Videos are: $VIDEO_STATE"
+      OPTION=$(Choose "Enable Videos" "Disable Videos")
+    fi
+    if [[ "$OPTION" =~ ^enable ]]; then
+      rm $HOME/.local/share/Steam/config/uioverrides/movies/bazzite_novideo
+    elif [[ "$OPTION" =~ ^disable ]]; then
+      touch $HOME/.local/share/Steam/config/uioverrides/movies/bazzite_novideo
+      rm $HOME/.local/share/Steam/config/uioverrides/movies/deck_startup.webm
+      rm $HOME/.local/share/Steam/config/uioverrides/movies/deck-suspend-animation.webm
+      rm $HOME/.local/share/Steam/config/uioverrides/movies/deck-suspend-animation-from-throbber.webm
+    fi
+
+# Restores the stock virtual keyboard under KDE & GNOME
+restore-virtual-keyboard:
+    #!/usr/bin/bash
+    IMAGE_INFO="/usr/share/ublue-os/image-info.json"
+    BASE_IMAGE_NAME=$(jq -r '."base-image-name"' < $IMAGE_INFO)
+    if [[ ${BASE_IMAGE_NAME} == 'silverblue' ]]; then
+      gnome-extensions disable block-caribou-36@lxylxy123456.ercli.dev
+    else
+      if [[ ! -f ~/.local/share/applications/com.github.maliit.keyboard.desktop ]]; then
+        mkdir -p ~/.local/share/applications/
+        cp /usr/share/ublue-os/backup/com.github.maliit.keyboard.desktop ~/.local/share/applications/com.github.maliit.keyboard.desktop
+      fi
+    fi
+
 # Install hhd main branch locally until reboot, helpful for hhd testing and debugging. (rename to install-hhd-dev if we unhide)
 _hhd-dev:
     #!/usr/bin/bash
@@ -154,3 +203,30 @@ _toggle-autologin:
     else
       sudo touch $DESKTOP_AUTOLOGIN
     fi
+
+# Restore the "Return to Gaming Mode" shortcut on the Desktop
+restore-gamemode-shortcut:
+    #!/usr/bin/bash
+    # Define paths
+    SHORTCUT_FILE="$HOME/Desktop/Return.desktop"
+    SKEL_FILE="/etc/skel/Desktop/Return.desktop"
+    # Check if the shortcut already exists
+    if [ -f "$SHORTCUT_FILE" ]; then
+      echo "The shortcut 'Return to Gaming Mode' already exists at $SHORTCUT_FILE."
+      echo "No changes were made."
+      exit 0
+    fi
+    # Check if the original file exists in skel
+    if [ ! -f "$SKEL_FILE" ]; then
+      echo "Error: The original file does not exist at $SKEL_FILE."
+      echo "Unable to restore the shortcut."
+      exit 1
+    fi
+    # Copy the file from skel to the desktop
+    echo "Restoring the 'Return to Gaming Mode' shortcut from $SKEL_FILE..."
+    mkdir -p "$HOME/Desktop"  # Ensure the Desktop directory exists
+    cp "$SKEL_FILE" "$SHORTCUT_FILE"
+    # Ensure the file is executable
+    chmod +x "$SHORTCUT_FILE"
+    echo "Shortcut restored successfully at $SHORTCUT_FILE."
+    echo "Note: The first time you use the shortcut, it may ask you to trust it. Please accept."

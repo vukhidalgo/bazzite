@@ -2,11 +2,14 @@
 
 %global _default_patch_fuzz 2
 %global build_timestamp %(date +"%Y%m%d")
-%global gamescope_tag 3.15.11
+#global gamescope_tag 3.15.11
+%global gamescope_commit 4da5e4a37560f9b3c85af2679330f9ec292c8ee1 
+%define short_commit %(echo %{gamescope_commit} | cut -c1-8)
 
 Name:           gamescope
-Version:        100.%{gamescope_tag}
-Release:        14.bazzite
+#Version:        100.%{gamescope_tag}
+Version:        105.%{short_commit}
+Release:        1.bazzite
 Summary:        Micro-compositor for video games on Wayland
 
 License:        BSD
@@ -20,9 +23,6 @@ Patch0:         0001-cstdint.patch
 # https://hhd.dev/
 # https://github.com/ChimeraOS/gamescope
 Patch1:         handheld.patch
-
-# https://github.com/ValveSoftware/gamescope/pull/740
-Patch2:         740.patch
 
 BuildRequires:  meson >= 0.54.0
 BuildRequires:  ninja-build
@@ -97,9 +97,9 @@ Summary:	libs for %{name}
 
 %prep
 # git clone --depth 1 --branch %%{gamescope_tag} %%{url}.git
-git clone --depth 1 --branch master %{url}.git
+git clone %{url}.git
 cd gamescope
-git checkout 7dd1bcd9102a17e039970ccd9a324a9fe8365d6d
+git checkout %{gamescope_commit} 
 git submodule update --init --recursive
 mkdir -p pkgconfig
 cp %{SOURCE0} pkgconfig/stb.pc
@@ -113,8 +113,7 @@ sed -i 's^../thirdparty/SPIRV-Headers/include/spirv/^/usr/include/spirv/^' src/m
 cd gamescope
 export PKG_CONFIG_PATH=pkgconfig
 %meson \
-    --auto-features=enabled \
-    -Dforce_fallback_for=vkroots,wlroots,libliftoff
+    -Dforce_fallback_for=libdisplay-info,libliftoff,wlroots,vkroots
 %meson_build
 
 %install

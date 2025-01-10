@@ -41,7 +41,8 @@ on:
         type: boolean
         default: false
 env:
-  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+  PULL_IMAGE_REGISTRY: ghcr.io/ublue-os
+  PUSH_IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -60,9 +61,9 @@ jobs:
       fail-fast: false
       matrix:
         base_image_flavor: [main]
-        base_name: [bazzite, bazzite-deck, bazzite-nvidia]
+        base_name: [bazzite, bazzite-deck, bazzite-nvidia, bazzite-deck-nvidia]
         base_image_name: [kinoite, silverblue]
-        target_image_flavor: [main, asus]
+        target_image_flavor: [main, asus, surface]
         target_nvidia_flavor: [nvidia, nvidia-open]
         fedora_version: [41]
         include:
@@ -70,16 +71,34 @@ jobs:
             is_latest_version: true
             is_stable_version: true
             kernel_flavor: bazzite # must match a kernel_flavor from akmods repo
-            kernel_version: 6.11.8-305.bazzite.fc41.x86_64 # must match a cached version of the above flavor
+            kernel_version: 6.12.8-201.bazzite.fc41.x86_64 # must match a cached version of the above flavor
         exclude:
           - base_name: bazzite
             target_nvidia_flavor: nvidia
           - base_name: bazzite-deck
             target_nvidia_flavor: nvidia
+          - base_name: bazzite-deck-nvidia
+            target_nvidia_flavor: nvidia
+          - base_name: bazzite-deck-nvidia
+            target_image_flavor: asus
+          - base_name: bazzite-deck-nvidia
+            target_image_flavor: surface
+          - base_name: bazzite-deck
+            target_image_flavor: surface
+          - target_image_flavor: surface
+            target_nvidia_flavor: nvidia
     steps:
+      - name: Define env.CONTAINER_TARGET
+        run: |
+          if [[ "${{ matrix.base_name }}" == "bazzite-deck-nvidia" ]]; then
+              echo "CONTAINER_TARGET=bazzite-nvidia" >> $GITHUB_ENV
+          else
+              echo "CONTAINER_TARGET=${{ matrix.base_name }}" >> $GITHUB_ENV
+          fi
+
       - name: Define env.IMAGE_FLAVOR
         run: |
-          if [[ "${{ matrix.base_name }}" == "bazzite-nvidia" ]]; then
+          if [[ "${{ matrix.base_name }}" =~ "nvidia" ]]; then
               if [[ "${{ matrix.target_image_flavor }}" == "main" ]]; then
                   echo "IMAGE_FLAVOR=${{ matrix.target_nvidia_flavor }}" >> $GITHUB_ENV
               else
@@ -102,12 +121,22 @@ jobs:
               else
                   echo "IMAGE_NAME=${{ format('{0}{1}', 'bazzite-deck', '${DESKTOP}') }}" >> $GITHUB_ENV
               fi
+          elif [[ "${{ matrix.base_name }}" == "bazzite-deck-nvidia" ]]; then
+              echo "IMAGE_NAME=${{ format('{0}{1}', 'bazzite-deck-nvidia', '${DESKTOP}') }}" >> $GITHUB_ENV
           else
               if [[ "${{ env.IMAGE_FLAVOR }}" == "main" ]]; then
                   echo "IMAGE_NAME=${{ format('{0}{1}', 'bazzite', '${DESKTOP}') }}" >> $GITHUB_ENV
               else
                   echo "IMAGE_NAME=${{ format('{0}{1}-{2}', 'bazzite', '${DESKTOP}', env.IMAGE_FLAVOR) }}" >> $GITHUB_ENV
               fi
+          fi
+
+      - name: Define env.NVIDIA_BASE
+        run: |
+          if [[ "${{ matrix.base_name }}" == "bazzite-deck-nvidia" ]]; then
+              echo "NVIDIA_BASE=bazzite-deck" >> $GITHUB_ENV
+          else
+              echo "NVIDIA_BASE=bazzite" >> $GITHUB_ENV
           fi
 
       - name: Define env.SHA_HEAD_SHORT
@@ -119,21 +148,21 @@ jobs:
         with:
           containers: ${{ matrix.base_image_name }}-${{ matrix.base_image_flavor }}:${{ matrix.fedora_version }}
           pubkey: https://raw.githubusercontent.com/ublue-os/${{ matrix.base_image_flavor }}/main/cosign.pub
-          registry: ${{ env.IMAGE_REGISTRY }}
+          registry: ${{ env.PULL_IMAGE_REGISTRY }}
 
       - name: Verify akmods image
         uses: EyeCantCU/cosign-action/verify@v0.3.0
         with:
           containers: akmods:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
           pubkey: https://raw.githubusercontent.com/ublue-os/akmods/main/cosign.pub
-          registry: ${{ env.IMAGE_REGISTRY }}
+          registry: ${{ env.PULL_IMAGE_REGISTRY }}
 
       - name: Verify akmods-nvidia image
         uses: EyeCantCU/cosign-action/verify@v0.3.0
         with:
           containers: akmods-${{ matrix.target_nvidia_flavor }}:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
           pubkey: https://raw.githubusercontent.com/ublue-os/akmods/main/cosign.pub
-          registry: ${{ env.IMAGE_REGISTRY }}
+          registry: ${{ env.PULL_IMAGE_REGISTRY }}
 
       # Checkout push-to-registry action GitHub repository
       - name: Checkout Push to Registry action
@@ -160,29 +189,29 @@ jobs:
         uses: ublue-os/remove-unwanted-software@v7
 
       - name: Pull main, akmods, rechunk images
-        uses: Wandalen/wretry.action@v3.7.2
+        uses: Wandalen/wretry.action@v3.8.0
         with:
           attempt_limit: 3
           attempt_delay: 15000
           command: |
             # pull the base images used for FROM in Containerfile so
             # we can retry on that unfortunately common failure case
-            sudo podman pull ${{ env.IMAGE_REGISTRY }}/${{ matrix.base_image_name }}-${{ matrix.base_image_flavor }}:${{ matrix.fedora_version }}
-            sudo podman pull ${{ env.IMAGE_REGISTRY }}/akmods:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
-            sudo podman pull ${{ env.IMAGE_REGISTRY }}/akmods-${{ matrix.target_nvidia_flavor }}:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
+            sudo podman pull ${{ env.PULL_IMAGE_REGISTRY }}/${{ matrix.base_image_name }}-${{ matrix.base_image_flavor }}:${{ matrix.fedora_version }}
+            sudo podman pull ${{ env.PULL_IMAGE_REGISTRY }}/akmods:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
+            sudo podman pull ${{ env.PULL_IMAGE_REGISTRY }}/akmods-${{ matrix.target_nvidia_flavor }}:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
 
             # Add rechunk as well to remove this source of failure
-            sudo podman pull ghcr.io/hhd-dev/rechunk:v1.0.1
+            sudo podman pull ghcr.io/hhd-dev/rechunk:v1.1.1
 
       - name: Get source versions
         id: labels
-        uses: Wandalen/wretry.action@v3.7.2
+        uses: Wandalen/wretry.action@v3.8.0
         with:
           attempt_limit: 3
           attempt_delay: 15000
           command: |
             set -eo pipefail
-            skopeo inspect docker://${{ env.IMAGE_REGISTRY }}/${{ matrix.base_image_name }}-${{ matrix.base_image_flavor }}:${{ matrix.fedora_version }} > source.json
+            skopeo inspect docker://${{ env.PULL_IMAGE_REGISTRY }}/${{ matrix.base_image_name }}-${{ matrix.base_image_flavor }}:${{ matrix.fedora_version }} > source.json
             ver=$(jq -r '.Labels["org.opencontainers.image.version"]' source.json)
             if [ -z "$ver" ] || [ "null" = "$ver" ]; then
               echo "inspected image version must not be empty or null"
@@ -229,10 +258,11 @@ jobs:
         id: build_image
         run: |
           sudo buildah build \
-            --target ${{ matrix.base_name }} \
+            --target ${{ env.CONTAINER_TARGET }} \
             --build-arg IMAGE_NAME=${{ env.IMAGE_NAME }} \
             --build-arg IMAGE_FLAVOR=${{ env.IMAGE_FLAVOR }} \
             --build-arg NVIDIA_FLAVOR=${{ matrix.target_nvidia_flavor }} \
+            --build-arg NVIDIA_BASE=${{ env.NVIDIA_BASE }} \
             --build-arg IMAGE_VENDOR=${{ github.repository_owner }} \
             --build-arg BASE_IMAGE_NAME=${{ matrix.base_image_name }} \
             --build-arg BASE_IMAGE_FLAVOR=${{ matrix.base_image_flavor }} \
@@ -248,9 +278,9 @@ jobs:
       - name: Remove auxiliary images
         # We are tight on space, need at least 2x for OSTree
         run: |
-          sudo podman image rm ${{ env.IMAGE_REGISTRY }}/${{ matrix.base_image_name }}-${{ matrix.base_image_flavor }}:${{ matrix.fedora_version }}
-          sudo podman image rm ${{ env.IMAGE_REGISTRY }}/akmods:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
-          sudo podman image rm ${{ env.IMAGE_REGISTRY }}/akmods-${{ matrix.target_nvidia_flavor }}:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
+          sudo podman image rm ${{ env.PULL_IMAGE_REGISTRY }}/${{ matrix.base_image_name }}-${{ matrix.base_image_flavor }}:${{ matrix.fedora_version }}
+          sudo podman image rm ${{ env.PULL_IMAGE_REGISTRY }}/akmods:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
+          sudo podman image rm ${{ env.PULL_IMAGE_REGISTRY }}/akmods-${{ matrix.target_nvidia_flavor }}:${{ matrix.kernel_flavor}}-${{ matrix.fedora_version }}-${{ matrix.kernel_version }}
       
       # Generate the previous image reference used by the Rechunker
       - name: Generate previous reference
@@ -260,7 +290,7 @@ jobs:
           if [ "${{ github.event.inputs.fresh-rechunk }}" == "true" ]; then
             IMAGEREF=""
           else
-            IMAGEREF="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:stable"
+            IMAGEREF="${{ env.PUSH_IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:stable"
           fi
 
           echo "ref=${IMAGEREF}" >> $GITHUB_OUTPUT
@@ -291,15 +321,15 @@ jobs:
       # Reprocess raw-img using rechunker which will delete it
       - name: Run Rechunker
         id: rechunk
-        uses: hhd-dev/rechunk@v1.0.1
+        uses: hhd-dev/rechunk@v1.1.1
         with:
-          rechunk: 'ghcr.io/hhd-dev/rechunk:v1.0.1'
+          rechunk: 'ghcr.io/hhd-dev/rechunk:v1.1.1'
           ref: 'raw-img'
           prev-ref: '${{ steps.generate-prev-ref.outputs.ref }}'
           version: '${{ steps.generate-version.outputs.tag }}'
           labels: |
             io.artifacthub.package.logo-url=https://raw.githubusercontent.com/ublue-os/bazzite/main/repo_content/logo.png
-            io.artifacthub.package.readme-url=https://docs.bazzite.gg
+            io.artifacthub.package.readme-url=https://raw.githubusercontent.com/ublue-os/bazzite/refs/heads/main/README.md
             org.opencontainers.image.created=<timestamp>
             org.opencontainers.image.description=Bazzite is a custom image built upon Fedora Atomic Desktops that brings the best of Linux gaming to all of your devices - including your favorite handheld.
             org.opencontainers.image.licenses=Apache-2.0
@@ -377,11 +407,11 @@ jobs:
         id: registry_case
         uses: ASzc/change-string-case-action@v6
         with:
-          string: ${{ env.IMAGE_REGISTRY }}
+          string: ${{ env.PUSH_IMAGE_REGISTRY }}
 
       # Push the image to GHCR (Image Registry)
       - name: Push To GHCR
-        uses: Wandalen/wretry.action@v3.7.2
+        uses: Wandalen/wretry.action@v3.8.0
         id: push
         if: github.event_name != 'pull_request'
         with:
@@ -409,6 +439,7 @@ jobs:
           registry-token: ${{ secrets.GITHUB_TOKEN }}
           signing-secret: ${{ secrets.SIGNING_SECRET }}
           tags: ${{ steps.digest.outputs.digest }}
+          registry: ${{ env.PUSH_IMAGE_REGISTRY }}
 
   generate_release:
     name: Generate Release
@@ -416,12 +447,3 @@ jobs:
     if: github.event_name != 'pull_request'
     secrets: inherit
     uses: ./.github/workflows/generate_release.yml
-
-  build_iso:
-    name: Build ISO
-    needs: [push-ghcr]
-    if: github.ref_name == 'testing'
-    # Eventually would be nice for building images in PRs
-    #if: ${{ endsWith(github.event.pull_request.title, '[ISO]') }}
-    uses: ./.github/workflows/build_iso.yml
-    secrets: inherit

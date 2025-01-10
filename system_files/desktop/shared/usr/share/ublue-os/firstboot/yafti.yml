@@ -21,8 +21,7 @@ screens:
           description: A self-hosted game stream host for Moonlight
           default: false
           packages:
-          - Install Sunshine: ujust setup-sunshine install
-          - Autostart Sunshine: ujust setup-sunshine autostart
+          - Enable Sunshine: ujust setup-sunshine enable
         EmuDeck:
           description: A utility for installing and configuring emulators.
           default: false
@@ -52,7 +51,7 @@ screens:
       show_terminal: true
       package_manager: yafti.plugin.run
       packages:
-        - Supergfxctl (Hybrid GPU Switching): ujust enable-supergfxctl
+        - Supergfxctl (Laptop Hybrid GPU Switching): ujust enable-supergfxctl
   configure-bazzite:
     source: yafti.screen.package
     values:
@@ -65,7 +64,7 @@ screens:
           default: true
           packages:
           - Set input group: sudo -A ujust add-user-to-input-group
-        Visible Password Aestriks:
+        Visible Password Asterisks:
             description: Toggles pwfeedback on.
             default: true
             packages:
@@ -107,7 +106,7 @@ screens:
       icon: "/usr/share/ublue-os/bazzite/logo.svg"
       links:
       - "Install More Applications":
-          run: /usr/bin/plasma-discover
+          run: /usr/bin/plasma-discover || /usr/bin/gnome-software
       - "Documentation":
           run: /usr/bin/xdg-open https://docs.bazzite.gg
       - "Forums":

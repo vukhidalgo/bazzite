@@ -13,54 +13,112 @@ _install-system-flatpaks:
     FLATPAK_LIST="$(curl https://raw.githubusercontent.com/ublue-os/bazzite/main/installer/${FLATPAKS} | tr '\n' ' ')"
     flatpak --system -y install --or-update ${FLATPAK_LIST}
 
-# Configure grub bootmenu visibility and fix duplicate entries
+# Configure grub bootmenu visibility. pass action 'help' for more info.
 configure-grub ACTION="":
     #!/usr/bin/bash
     source /usr/lib/ujust/ujust.sh
-    GRUB_STATE="$(grep -P "^GRUB_TIMEOUT_STYLE=hidden" /etc/default/grub)"
-    OPTION={{ ACTION }}
-    if [ "$GRUB_STATE" == "GRUB_TIMEOUT_STYLE=hidden" ]; then
-        GRUB_STATE="${b}Hidden${n}"
-    else
-        GRUB_STATE="${b}Not Hidden${n}"
-    fi
+    # Function to display usage/help with some color
+    print_help() {
+      echo -e "Usage: ujust configure-grub <option>"
+      echo
+      echo -e "Where <option> can be:"
+      echo -e "  ${bold}${cyan}hide${normal} = GRUB is hidden after a successful boot, even for dual-boot setups."
+      echo -e "  ${bold}${yellow}unhide${normal} = GRUB is hidden after a successful boot, but it will show if dual-booting."
+      echo -e "  ${bold}${green}show${normal} = GRUB always shows on boot."
+      echo
+      echo "If <option> is omitted, you will be prompted to choose interactively."
+    }
+    # Function to get the current GRUB menu_auto_hide setting and explain it
+    get_current_setting() {
+      local CURRENT_SETTING
+      CURRENT_SETTING=$(sudo grub2-editenv - list | grep menu_auto_hide | cut -d= -f2)
+      if [ -z "$CURRENT_SETTING" ]; then
+        echo "Current GRUB menu_auto_hide setting: ${bold}${red}Not Set (default to 0)${normal}"
+        echo "Explanation:"
+        echo "  - ${bold}0${normal}: GRUB always shows on boot."
+        return 0
+      else
+        case "$CURRENT_SETTING" in
+          0)
+            echo "Current GRUB menu_auto_hide setting: ${bold}${green}0 (Always Show)${normal}"
+            echo "Explanation:"
+            echo "  - ${bold}0${normal}: GRUB always shows on boot."
+            ;;
+          1)
+            echo "Current GRUB menu_auto_hide setting: ${bold}${yellow}1 (Hide After Successful Boot)${normal}"
+            echo "Explanation:"
+            echo "  - ${bold}1${normal}: GRUB is hidden after a successful boot, but it will show if dual-booting."
+            ;;
+          2)
+            echo "Current GRUB menu_auto_hide setting: ${bold}${cyan}2 (Always Hide)${normal}"
+            echo "Explanation:"
+            echo "  - ${bold}2${normal}: GRUB is hidden after a successful boot, even for dual-boot setups."
+            ;;
+          *)
+            echo "Current GRUB menu_auto_hide setting: ${bold}${red}Unknown${normal}"
+            echo "Explanation:"
+            echo "  - This setting is unrecognized. Reset it to 0, 1, or 2."
+            ;;
+        esac
+      fi
+    }
+    # Interactive menu for choosing the new behavior
+    interactive_menu() {
+      local options=(
+        "Always Hide Grub (menu_auto_hide=2)"
+        "Hide After Successful Boot (menu_auto_hide=1)"
+        "Always Show Grub (menu_auto_hide=0)"
+        "Exit without changes"
+      )
+      local choice
+      choice=$(ugum choose "${options[@]}")
+      echo "$choice"
+    }
+    # Function to apply the selected setting
+    apply_setting() {
+      local selected_option="$1"
+      # Support the interactive strings as well as short commands
+      case "$(echo "$selected_option" | tr '[:upper:]' '[:lower:]')" in
+        *"(menu_auto_hide=2)"*|hide)
+          sudo grub2-editenv - set menu_auto_hide=2
+          echo "GRUB menu is now set to ${bold}${cyan}Always Hide${normal}."
+          ;;
+        *"(menu_auto_hide=1)"*|unhide)
+          sudo grub2-editenv - set menu_auto_hide=1
+          echo "GRUB menu is now set to ${bold}${yellow}Hide After Successful Boot${normal}."
+          ;;
+        *"(menu_auto_hide=0)"*|show)
+          sudo grub2-editenv - set menu_auto_hide=0
+          echo "GRUB menu is now set to ${bold}${green}Always Show${normal}."
+          ;;
+        *"exit without changes"*|exit)
+          echo "${bold}No changes were made. Exiting...${normal}"
+          ;;
+        help)
+          print_help
+          ;;
+        *)
+          echo "${bold}${red}Invalid option selected. No changes were made.${normal}"
+          ;;
+      esac
+    }
+    OPTION="{{ ACTION }}"   # from “configure-grub ACTION=...”
     if [ "$OPTION" == "help" ]; then
-      echo "Usage: ujust configure-grub <option>"
-      echo "  <option>: Specify the quick option to skip the prompt"
-      echo "  Use 'hide' to select Hide Grub"
-      echo "  Use 'unhide' to select Unhide Grub"
-      echo "  Use 'fix' to select Fix double ostree entry"
+      print_help
       exit 0
-    elif [ "$OPTION" == "" ]; then
-      echo "${bold}Grub menu configuration${normal}"
-      echo "Grub menu is set to: $GRUB_STATE"
-      OPTION=$(Choose "Hide Grub" "Unhide Grub" "Fix double ostree entry")
     fi
-    if [[ "${OPTION,,}" =~ ^hide ]]; then
-      sudo sed -i 's/GRUB_TIMEOUT=5/GRUB_TIMEOUT=0/g' /etc/default/grub
-      echo 'GRUB_TIMEOUT_STYLE=hidden' | sudo tee -a /etc/default/grub 1>/dev/null
-      echo 'GRUB_HIDDEN_TIMEOUT=1' | sudo tee -a /etc/default/grub 1>/dev/null
-      if [ -d /sys/firmware/efi ]; then
-        sudo grub2-mkconfig -o /etc/grub2-efi.cfg
+    get_current_setting
+    echo
+    # If no ACTION was passed, go interactive
+    if [ -z "$OPTION" ]; then
+      NEW_SETTING=$(interactive_menu)
+      if [ -n "$NEW_SETTING" ]; then
+        apply_setting "$NEW_SETTING"
       else
-        sudo grub2-mkconfig -o /etc/grub2.cfg
+        echo "${bold}No changes were made.${normal}"
       fi
-    elif [[ "${OPTION,,}" =~ ^unhide ]]; then
-      sudo sed -i '/GRUB_HIDDEN_TIMEOUT=1/d' /etc/default/grub
-      sudo sed -i '/GRUB_TIMEOUT_STYLE=hidden/d' /etc/default/grub
-      sudo sed -i 's/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/g' /etc/default/grub
-      if [ -d /sys/firmware/efi ]; then
-        sudo grub2-mkconfig -o /etc/grub2-efi.cfg
-      else
-        sudo grub2-mkconfig -o /etc/grub2.cfg
-      fi
-    elif [[ "${OPTION,,}" =~ ^fix ]]; then
-      sudo grub2-switch-to-blscfg
-      if [ -d /sys/firmware/efi ]; then
-        sudo grub2-mkconfig -o /etc/grub2-efi.cfg
-      else
-        sudo grub2-mkconfig -o /etc/grub2.cfg
-      fi
+    else
+      apply_setting "$OPTION"
     fi
 
 # Add user to "input" group required by certain controller drivers
@@ -172,6 +230,30 @@ ptyxis-transparency opacity="0.95":
       printf "Ptyxis opacity is now %s.\n" "{{ opacity }}"
     else
       printf "Value must be between 0 and 1: %s.\n" "{{ opacity }}"
+    fi
+
+# Configure snapshotting for /var/home
+configure-snapshots ACTION="":
+    #!/usr/bin/bash
+    source /usr/lib/ujust/ujust.sh
+    OPTION={{ ACTION }}
+    if [ "$OPTION" == "help" ]; then
+      echo "Usage: ujust configure-snapshots <option>"
+      echo "  <option>: Specify the quick option to skip the prompt"
+      echo "  Use 'enable' enable snapshotting of /var/home"
+      echo "  Use 'disable' disable snapshotting of /var/home"
+      echo "  Use 'wipe' disable snapshotting and remove all automatic snapshots of /var/home"
+      exit 0
+    elif [ "$OPTION" == "" ]; then
+      echo "${bold}Snapper setup and configuration${normal}"
+      OPTION=$(Choose "Enable Snapper" "Disable Snapper" "Wipe Snapper config and automatic snapshots")
+    fi
+    if [[ "${OPTION,,}" =~ ^enable ]]; then
+      /usr/libexec/bazzite-snapper-config enable
+    elif [[ "${OPTION,,}" =~ ^disable ]]; then
+      /usr/libexec/bazzite-snapper-config disable
+    elif [[ "${OPTION,,}" =~ ^wipe ]]; then
+      /usr/libexec/bazzite-snapper-config wipe
     fi
 
 # Bazzite CLI mod for bluefin style cli-bing (modfied copy of https://github.com/ublue-os/bluefin/blob/faf7303afa6f8d6e747940c1d1ba63c6d2d43c80/system_files/shared/usr/libexec/ublue-bling.sh#L62)
@@ -356,7 +438,6 @@ toggle-password-feedback ACTION="":
     #!/usr/bin/bash
     PWFEEDBACK_FILE="/etc/sudoers.d/enable-pwfeedback"
     OPTION={{ ACTION }}
-
     if [ "$OPTION" = "on" ]; then
       echo 'Defaults pwfeedback' | sudo tee $PWFEEDBACK_FILE
       echo "enabled, restart terminal to see changes"

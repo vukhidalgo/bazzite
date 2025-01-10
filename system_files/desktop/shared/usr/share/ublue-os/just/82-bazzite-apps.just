@@ -3,24 +3,22 @@
 # Install LACT for overclocking & undervolting AMD GPUs
 install-lact:
     #!/usr/bin/bash
+    ublue-update --wait
     rpm-ostree kargs --append-if-missing=$(printf 'amdgpu.ppfeaturemask=0x%x\n' "$(($(cat /sys/module/amdgpu/parameters/ppfeaturemask) | 0x4000))")
     if [[ ${BASE_IMAGE_NAME} == 'silverblue' ]]; then
-        rpm-ostree install --apply-live -y lact-libadwaita
+        rpm-ostree install -y lact-libadwaita
     else
-        rpm-ostree install --apply-live -y lact
+        rpm-ostree install -y lact
     fi
-    sudo systemctl enable --now lactd
+    echo 'Complete, please reboot to apply changes.'
 
 # Install CoolerControl, a GUI for viewing all your system's sensors and for creating custom fan and pump profiles based on any available temperature sensor28
 install-coolercontrol:
     #!/usr/bin/bash
     ublue-update --wait
     sudo wget https://copr.fedorainfracloud.org/coprs/codifryed/CoolerControl/repo/fedora-$(rpm -E %fedora)/codifryed-CoolerControl-fedora-$(rpm -E %fedora).repo -O /etc/yum.repos.d/_copr_codifryed-CoolerControl.repo
-    rpm-ostree install --apply-live -y liquidctl coolercontrol
-    systemctl enable coolercontrold.service
-    mkdir -p $HOME/.config/autostart
-    cp /usr/share/applications/org.coolercontrol.CoolerControl.desktop $HOME/.config/autostart/org.coolercontrol.CoolerControl.desktop
-    echo 'Complete.'
+    rpm-ostree install -y liquidctl coolercontrol
+    echo 'Complete, please reboot to apply changes.'
 
 alias get-steamcmd := install-steamcmd
 
@@ -143,6 +141,18 @@ install-opentabletdriver:
     systemctl --user daemon-reload && \
     systemctl enable --user --now arch-opentabletdriver.service && \
     distrobox enter -n arch -- bash -c 'distrobox-export --app otd-gui'
+
+# Install Docker, a platform designed to help developers build, share, and run container applications
+install-docker:
+    #!/usr/bin/bash
+    sudo mkdir -p /var/lib/docker
+    echo 'Creating Docker group.'
+    sudo groupadd --gid 252 docker
+    echo 'Setting up Docker Distrobox Container.'
+    distrobox assemble create --replace --file /etc/distrobox/docker.ini --name docker
+    echo 'Installing docker-cli for the host.'
+    brew install docker
+    echo 'Complete.'
 
 # Create fedora distrobox if it doesn't exist
 [private]
